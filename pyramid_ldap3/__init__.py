@@ -173,7 +173,7 @@ class Connector(object):
         self.registry = registry
         self.manager = manager
 
-    def authenticate(self, login, password):
+    def authenticate(self, login, password, connector_name=None):
         """Validate the given login name and password.
 
         Given a login name and a password, return a tuple of ``(dn,
@@ -198,7 +198,10 @@ class Connector(object):
         if password == '':
             return None
 
-        search = getattr(self.registry, 'ldap_login_query', None)
+        if connector_name is None:
+            connector_name = ''
+
+        search = getattr(self.registry, 'ldap_login_query_{}'.format(connector_name), None)
         if search is None:
             raise ConfigurationError(
                 'ldap_set_login_query was not called during setup')
@@ -257,7 +260,7 @@ class Connector(object):
 def ldap_set_login_query(
         config, base_dn, filter_tmpl,
         scope=ldap3.LEVEL, attributes=None,
-        cache_period=0):
+        cache_period=0, connector_name=None):
     """Configurator method to set the LDAP login search.
 
     ``base_dn`` is the DN at which to begin the search.
@@ -283,8 +286,12 @@ def ldap_set_login_query(
 
     query = _LDAPQuery(base_dn, filter_tmpl, scope, attributes, cache_period)
 
+    if connector_name is None:
+        connector_name = ""
+
     def register():
-        config.registry.ldap_login_query = query
+        #config.registry.ldap_login_query = query
+        setattr(config.registry, 'ldap_login_query_{}'.format(connector_name), query)
 
     intr = config.introspectable(
         'pyramid_ldap3 login query',
@@ -292,13 +299,13 @@ def ldap_set_login_query(
         str(query),
         'pyramid_ldap3 login query')
 
-    config.action('ldap-set-login-query', register, introspectables=(intr,))
+    config.action('ldap-set-login-query-{}'.format(connector_name), register, introspectables=(intr,))
 
 
 def ldap_set_groups_query(
         config, base_dn, filter_tmpl,
         scope=ldap3.SUBTREE, attributes=None,
-        cache_period=0):
+        cache_period=0, connector_name=None):
     """ Configurator method to set the LDAP groups search.
 
     ``base_dn`` is the DN at which to begin the search.
@@ -322,8 +329,12 @@ def ldap_set_groups_query(
 
     query = _LDAPQuery(base_dn, filter_tmpl, scope, attributes, cache_period)
 
+    if connector_name is None:
+        connector_name = ""
+
     def register():
-        config.registry.ldap_groups_query = query
+        #config.registry.ldap_groups_query = query
+        setattr(config.registry, 'ldap_groups_query_{}'.format(connector_name), query)
 
     intr = config.introspectable(
         'pyramid_ldap3 groups query',
@@ -331,14 +342,14 @@ def ldap_set_groups_query(
         str(query),
         'pyramid_ldap3 groups query')
 
-    config.action('ldap-set-groups-query', register, introspectables=(intr,))
+    config.action('ldap-set-groups-query-{}'.format(connector_name), register, introspectables=(intr,))
 
 
 def ldap_setup(
         config, uri,
         bind=None, passwd=None, use_tls=False,
         use_pool=True, pool_size=10, pool_lifetime=3600,
-        get_info=None):
+        get_info=None, connector_name=None):
     """Configurator method to set up an LDAP connection pool.
 
     - **uri**: ldap server uri(s) **[mandatory]**
@@ -364,24 +375,29 @@ def ldap_setup(
     def get_connector(request):
         return Connector(request.registry, manager)
 
+    if connector_name is None:
+        connector_name = 'ldap_connector'
+
     config.add_request_method(
-        get_connector, 'ldap_connector', property=True, reify=True)
+        get_connector, connector_name, property=True, reify=True)
 
     intr = config.introspectable(
         'pyramid_ldap3 setup',
         None,
         str(manager),
         'pyramid_ldap3 setup')
-    config.action('ldap-setup', None, introspectables=(intr,))
+    config.action('ldap-setup-{}'.format(connector_name), None, introspectables=(intr,))
 
 
-def get_ldap_connector(request):
+def get_ldap_connector(request, connector_name=None):
     """Return the LDAP connector attached to the request.
 
     If :meth:`pyramid.config.Configurator.ldap_setup` was not called, using
     this function will raise an :exc:`pyramid.exceptions.ConfigurationError`.
     """
-    connector = getattr(request, 'ldap_connector', None)
+    if connector_name is None:
+        connector_name = 'ldap_connector'
+    connector = getattr(request, connector_name, None)
     if connector is None:
         if LDAPException is Exception:  # pragma: no cover
             raise ImportError(
